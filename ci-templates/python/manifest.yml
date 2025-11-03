@@ -1,0 +1,87 @@
+type: python
+
+templates:
+  build:
+    default: poetry.yml
+    options:
+      - poetry.yml
+      - setuptools.yml
+
+  cache:
+    default: pip.yml
+    options:
+      - pip.yml
+      - poetry.yml
+
+  coverage:
+    default: coverage.yml
+    options:
+      - coverage.yml
+      - codecov-upload.yml
+
+  dependency:
+    default: dependency-updates.yml
+    options:
+      - dependency-updates.yml
+      - pip-check.yml
+
+  docs:
+    default: mkdocs.yml
+    options:
+      - mkdocs.yml
+      - sphinx.yml
+
+  format:
+    default: black.yml
+    options:
+      - black.yml
+      - isort.yml
+
+  lint:
+    default: ruff.yml
+    options:
+      - ruff.yml
+      - flake8.yml
+      - pylint.yml
+
+  install:
+    default: matrix-install.yml
+    options:
+      - matrix-install.yml
+
+  lock-validation:
+    default: poetry-lock.yml
+    options:
+      - poetry-lock.yml
+      - setuptools-lock.yml
+
+  publish:
+    default: pypi.yml
+    options:
+      - pypi.yml
+      - testpypi.yml
+
+  deploy:
+
+  security:
+    default: pip-audit.yml
+    options:
+      - pip-audit.yml
+      - safety.yml
+      - bandit.yml
+
+  test:
+    default: pytest.yml
+    options:
+      - pytest.yml
+      - unittest.yml
+      - nose.yml
+
+  typecheck:
+    default: mypy.yml
+    options:
+      - mypy.yml
+      - pyright.yml
+
+version: 1.0.0
+schema: v1

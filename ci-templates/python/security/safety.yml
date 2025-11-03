@@ -1,0 +1,63 @@
+# Workflow: Run Safety to scan installed Python packages for known vulnerabilities
+
+name: Python - Safety (Dependency Security Scan)
+on:
+  push:
+    paths:
+      - '**/*.py'
+      - 'requirements*.txt'
+      - 'pyproject.toml'
+      - 'Pipfile'
+      - 'setup.py'
+      - '.github/workflows/safety.yml'
+  pull_request:
+    paths:
+      - '**/*.py'
+      - 'requirements*.txt'
+      - 'pyproject.toml'
+      - 'Pipfile'
+      - 'setup.py'
+      - '.github/workflows/safety.yml'
+
+concurrency:
+  group: safety-scan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  safety-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt', '**/pyproject.toml', '**/Pipfile') }}
+
+      - name: Install project dependencies (if any)
+        run: |
+          set -euo pipefail
+          if [ -f requirements.txt ] || ls requirements*.txt 1> /dev/null 2>&1; then
+            pip install -r requirements.txt
+          elif [ -f Pipfile ]; then
+            pip install pipenv
+            pipenv install --dev --system --deploy || pipenv install --system
+          elif [ -f pyproject.toml ] || [ -f setup.py ]; then
+            pip install .
+          else
+            echo "No dependency file found; proceeding with system environment (safety will scan installed packages)."
+          fi
+
+      - name: Install Safety
+        run: pip install "safety"
+
+      - name: Run Safety (security scan)
+        # Exits non-zero on vulnerabilities to fail the workflow.
+        run: safety check --full-report

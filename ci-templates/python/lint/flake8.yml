@@ -1,0 +1,91 @@
+# Lint: Generic Flake8 GitHub Actions workflow — enforces Python style and catches common issues.
+name: Flake8 Lint
+
+on:
+  push:
+    paths:
+      - '**/*.py'                        # Trigger on any Python file change
+      - '.github/workflows/**'           # Trigger when workflows change
+      - 'pyproject.toml'                 # Trigger when project metadata / config changes
+      - 'setup.cfg'
+      - 'requirements*.txt'
+  pull_request:
+    paths:
+      - '**/*.py'
+      - '.github/workflows/**'
+      - 'pyproject.toml'
+      - 'setup.cfg'
+      - 'requirements*.txt'
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'If "true", run a fixer to apply fixes and push changes'
+        required: false
+        default: 'false'
+
+jobs:
+  flake8:
+    name: Flake8 (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.10', '3.9']   # Adjust matrix as needed for your supported versions
+    env:
+      FLAKE8_ARGS: ''                    # Override via workflow inputs or repo secrets if required
+      APPLY: ${{ github.event.inputs.apply }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+
+      - name: Install dependencies and Flake8 (and optional fixer)
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8
+          # If your project provides dev dependencies, install them to ensure flake8 plugins are available
+          if [ -f requirements-dev.txt ]; then
+            pip install -r requirements-dev.txt
+          elif [ -f requirements.txt ]; then
+            pip install -r requirements.txt || true
+          fi
+          # If a run was triggered with apply=true, install ruff to apply fixes (you can change to your preferred fixer)
+          if [ "${{ github.event.inputs.apply }}" = "true" ]; then
+            pip install ruff
+          fi
+
+      - name: Show Flake8 version and configuration
+        run: flake8 --version
+
+      - name: Apply fixes (optional)
+        if: ${{ github.event.inputs.apply == 'true' }}
+        run: |
+          # Use ruff to automatically fix issues (replace with your preferred fixer if needed)
+          ruff --fix .
+
+          # If changes were made, commit and push them back
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ -n "$(git status --porcelain)" ]; then
+            git add -A
+            git commit -m "Apply ruff fixes via GitHub Actions"
+            git push
+          else
+            echo "No changes to commit"
+          fi
+
+      - name: Run Flake8
+        run: flake8 ${FLAKE8_ARGS} .

@@ -1,0 +1,93 @@
+name: Publish Python package
+on:
+  push:
+    tags:
+      - 'v*'                      # release tags like v1.2.3 trigger publishing
+    branches:
+      - main
+      - master
+    paths:
+      - '**.py'
+      - 'pyproject.toml'
+      - 'setup.cfg'
+      - 'setup.py'
+      - '.github/workflows/**'
+  pull_request:
+    paths:
+      - '**.py'
+      - 'pyproject.toml'
+      - 'setup.cfg'
+      - 'setup.py'
+      - '.github/workflows/**'
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: 'Target repository (testpypi or pypi)'
+        required: false
+        default: 'testpypi'
+      python_version:
+        description: 'Python version used to build (e.g. 3.10 or 3.x)'
+        required: false
+        default: '3.x'
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    env:
+      # For manual dispatch the chosen input is used; otherwise default to testpypi.
+      PUBLISH_REPOSITORY: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.repository || 'testpypi' }}
+      PYTHON_VERSION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.python_version || '3.x' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml', '**/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip setuptools wheel build twine
+
+      - name: Build sdist and wheel
+        run: |
+          # Build both sdist and wheel into dist/
+          python -m build --sdist --wheel --outdir dist
+
+      - name: Publish to PyPI / TestPyPI
+        if: |
+          github.event_name == 'workflow_dispatch' ||
+          startsWith(github.ref, 'refs/tags/')
+        env:
+          # Choose secrets dynamically based on repository target.
+          # For 'pypi' provide secrets.PYPI_USERNAME / secrets.PYPI_PASSWORD
+          # For 'testpypi' provide secrets.TESTPYPI_USERNAME / secrets.TESTPYPI_PASSWORD
+          TWINE_USERNAME: ${{ env.PUBLISH_REPOSITORY == 'pypi' && secrets.PYPI_USERNAME || secrets.TESTPYPI_USERNAME }}
+          TWINE_PASSWORD: ${{ env.PUBLISH_REPOSITORY == 'pypi' && secrets.PYPI_PASSWORD || secrets.TESTPYPI_PASSWORD }}
+        run: |
+          if [ -z "$TWINE_USERNAME" ] || [ -z "$TWINE_PASSWORD" ]; then
+            echo "TWINE_USERNAME or TWINE_PASSWORD is not set. Aborting publish."
+            exit 1
+          fi
+          python -m twine upload --repository "${PUBLISH_REPOSITORY}" dist/*
+
+      - name: Done
+        if: always()
+        run: echo "Build-and-publish job finished (publish target: ${PUBLISH_REPOSITORY})."

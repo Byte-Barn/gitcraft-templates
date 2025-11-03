@@ -1,0 +1,86 @@
+# Build Sphinx HTML docs and (on default branch pushes) deploy to GitHub Pages
+name: Build and Deploy Documentation
+on:
+  push:
+    paths:
+      - 'docs/**'
+      - '.github/workflows/**'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - '.github/workflows/**'
+
+# Minimum permissions required for Pages deployment
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+          cache: 'pip'
+          cache-dependency-path: '**/requirements.txt'
+
+      - name: Install dependencies
+        # If you maintain a requirements.txt, it will be used; otherwise install Sphinx only.
+        run: |
+          if [ -f requirements.txt ]; then
+            pip install --upgrade pip
+            pip install -r requirements.txt
+          else
+            pip install --upgrade pip
+            pip install sphinx
+          fi
+
+      - name: Build HTML documentation with Sphinx
+        run: |
+          mkdir -p docs/_build/html
+          sphinx-build -b html docs/ docs/_build/html
+
+      - name: Archive built docs (debugging artifact)
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-html
+          path: docs/_build/html
+
+  deploy-pages:
+    needs: build-docs
+    runs-on: ubuntu-latest
+    # Only deploy when this is a push to the repository's default branch
+    if: ${{ github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    steps:
+      - name: Checkout repository (required by deploy action)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download built docs artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docs-html
+          path: docs/_build/html
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: docs/_build/html
+          publish_branch: gh-pages
+          # adjust commit message as needed
+          commit_message: 'docs: update GitHub Pages (CI)'

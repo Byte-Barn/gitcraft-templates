@@ -1,0 +1,61 @@
+# GitHub Actions workflow: Generic, robust Python Nose2 test suite
+name: Python - Nose2 Test Suite
+on:
+  push:
+    paths:
+      - '**/*.py'                      # Trigger on Python file changes
+      - 'requirements*.txt'            # Trigger when dependencies change
+      - '.github/workflows/**'         # Trigger on workflow changes
+  pull_request:
+    paths:
+      - '**/*.py'
+      - 'requirements*.txt'
+      - '.github/workflows/**'
+  workflow_dispatch: {}               # Allow manual runs
+
+jobs:
+  nose2:
+    name: Nose2 tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    concurrency:
+      group: nose2-${{ github.repository }}-${{ github.ref }}
+      cancel-in-progress: true
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [3.8, 3.9, 3.10, 3.11, 3.12]  # Adjust as needed
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Install project dependencies if present, then ensure nose2 is available
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install nose2
+
+      - name: Show Python info
+        run: |
+          python --version
+          python -m pip --version
+
+      - name: Run Nose2 tests
+        run: |
+          # Run nose2; modify arguments (path, verbosity, plugins) as needed for your project
+          nose2 -v

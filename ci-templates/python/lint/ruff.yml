@@ -1,0 +1,78 @@
+# GitHub Actions workflow: Generic Ruff linter (check by default, optional fix via workflow_dispatch)
+name: Ruff — Lint and Format
+
+on:
+  push:
+    paths:
+      - '**/*.py'
+      - 'pyproject.toml'
+      - 'setup.cfg'
+      - 'requirements.txt'
+      - 'Pipfile'
+      - 'poetry.lock'
+      - '.ruff.toml'
+      - 'ruff.toml'
+      - '.github/**'
+  pull_request:
+    paths:
+      - '**/*.py'
+      - 'pyproject.toml'
+      - 'setup.cfg'
+      - 'requirements.txt'
+      - 'Pipfile'
+      - 'poetry.lock'
+      - '.ruff.toml'
+      - 'ruff.toml'
+      - '.github/**'
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'If "true", attempt to auto-fix files and show changes'
+        required: false
+        default: 'false'
+
+jobs:
+  ruff:
+    name: Ruff linter
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt', '**/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install Ruff
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff
+
+      - name: Show Ruff version
+        run: ruff --version
+
+      # Default: run checks on push/pull_request and when workflow_dispatch apply != 'true'
+      - name: Run Ruff (check)
+        if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.apply != 'true' }}
+        run: ruff check .
+
+      # Optional: attempt to auto-fix files when explicitly invoked via workflow_dispatch with apply == 'true'
+      - name: Run Ruff (fix)
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.apply == 'true' }}
+        run: |
+          ruff check --fix .
+          # show any modified files for review in the run output
+          git --no-pager diff --name-only || true

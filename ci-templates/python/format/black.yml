@@ -1,0 +1,71 @@
+# Workflow: Format Python code with Black — check by default, optionally apply fixes via workflow_dispatch
+name: Black Code Formatter
+permissions:
+  contents: write
+
+on:
+  push:
+    paths:
+      - '**/*.py'
+      - 'pyproject.toml'
+      - 'setup.cfg'
+      - '.github/workflows/**'
+  pull_request:
+    paths:
+      - '**/*.py'
+      - 'pyproject.toml'
+      - 'setup.cfg'
+      - '.github/workflows/**'
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'If "true", run Black to apply fixes and push changes'
+        required: false
+        default: 'false'
+
+jobs:
+  black-format:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml', '**/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install Black
+        run: python -m pip install --upgrade pip && pip install --upgrade black
+
+      - name: Run Black (check only)
+        id: black-check
+        run: |
+          black --version
+          black --check --diff .
+
+      - name: Run Black and push fixes (when invoked with apply=true)
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.apply == 'true' }}
+        run: |
+          black .
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ -n "$(git status --porcelain)" ]; then
+            git add -A
+            git commit -m "chore: format Python code with Black"
+            git push
+          else
+            echo "No formatting changes to commit."
+          fi

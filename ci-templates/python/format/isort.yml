@@ -1,0 +1,71 @@
+# GitHub Actions workflow: Check and optionally apply Python import formatting with isort
+name: isort — Import Formatting
+on:
+  push:
+    paths:
+      - '**/*.py'                      # Trigger on any Python file changes
+      - '.github/workflows/**.yml'     # Trigger when workflow files change (adjust if needed)
+  pull_request:
+    paths:
+      - '**/*.py'
+      - '.github/workflows/**.yml'
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'If "true", run isort to apply fixes and push changes'
+        required: false
+        default: 'false'
+
+concurrency:
+  group: isort-check-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write   # required if workflow may push changes back to the repo
+
+jobs:
+  isort-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'        # Use latest compatible 3.x; change to specific if desired
+          cache: 'pip'                # Cache installed packages for faster runs
+
+      - name: Install isort (and dev deps if present)
+        run: |
+          python -m pip install --upgrade pip
+          # If your project has a development requirements file, install it to ensure consistent tooling
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+          pip install isort
+
+      - name: Run isort (check-only)
+        if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.apply != 'true' }}
+        run: isort --check-only --diff .
+
+      - name: Apply isort fixes and push (manual run only)
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.apply == 'true' }}
+        run: |
+          # Apply formatting changes
+          isort .
+
+          # Configure Git user for the commit
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Commit & push only if there are changes
+          if git diff --quiet; then
+            echo "No isort changes to commit."
+          else
+            git add -A
+            git commit -m "chore: apply isort formatting"
+            git push
+          fi

@@ -1,0 +1,71 @@
+# Mypy static type checking workflow (generic, robust, and easy to understand)
+
+name: Typecheck — Mypy
+on:
+  push:
+    paths:
+      - '**/*.py'                    # run when Python source files change
+      - '.github/workflows/**'       # run when workflow files change (helps template updates)
+  pull_request:
+    paths:
+      - '**/*.py'
+      - '.github/workflows/**'
+  workflow_dispatch:                 # allow manual runs
+
+jobs:
+  mypy-check:
+    name: Mypy (type check) on Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.8', '3.9', '3.10', '3.11']   # adjust supported versions as needed
+    env:
+      PYTHONUNBUFFERED: 1
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache pip and mypy cache
+        uses: actions/cache@v4
+        with:
+          # cache pip wheel/installs and mypy's cache directory
+          path: |
+            ~/.cache/pip
+            .mypy_cache
+          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/requirements.txt', '**/requirements-dev.txt', 'pyproject.toml', 'poetry.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+
+      - name: Install dependencies (prefer dev requirements, fallback to installing mypy)
+        run: |
+          if [ -f requirements-dev.txt ]; then
+            pip install -r requirements-dev.txt
+          elif [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+            pip install mypy
+          elif [ -f pyproject.toml ]; then
+            # if project uses poetry or other tools, try installing mypy explicitly
+            pip install mypy
+          else
+            pip install mypy
+          fi
+
+      - name: Run Mypy (type checking)
+        # use a small shell wrapper so we respect a project config file if present
+        run: |
+          if [ -f mypy.ini ]; then
+            mypy --config-file mypy.ini .
+          elif [ -f setup.cfg ]; then
+            mypy --config-file setup.cfg .
+          elif [ -f pyproject.toml ]; then
+            # some projects may include mypy config in pyproject.toml; mypy autodiscovers it
+            mypy .
+          else
+            mypy .
+          fi

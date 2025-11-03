@@ -1,0 +1,65 @@
+# GitHub Actions workflow: Generic, robust Python test suite (unittest/pytest fallback)
+
+name: Python Test Suite
+on:
+  push:
+    paths:
+      - '**/*.py'
+      - 'requirements.txt'
+      - 'pyproject.toml'
+      - '.github/workflows/**'
+  pull_request:
+    paths:
+      - '**/*.py'
+      - 'requirements.txt'
+      - 'pyproject.toml'
+      - '.github/workflows/**'
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.10', '3.9']
+      fail-fast: false
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+
+      - name: Show Python info
+        run: |
+          python -V
+          pip -V
+
+      - name: Install dependencies (requirements.txt or pyproject.toml)
+        run: |
+          pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          elif [ -f pyproject.toml ]; then
+            pip install .
+          else
+            echo "No requirements.txt or pyproject.toml found — skipping install"
+          fi
+
+      - name: Run tests (prefer pytest, fallback to unittest)
+        env:
+          PYTHONUNBUFFERED: 1
+        run: |
+          # If pytest is available use it (produce a compact report), otherwise run unittest discovery.
+          if python -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('pytest') else 1)"; then
+            pytest -q --maxfail=1
+          else
+            python -m unittest discover -v
+          fi

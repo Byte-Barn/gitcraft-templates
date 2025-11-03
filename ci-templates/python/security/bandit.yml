@@ -1,0 +1,84 @@
+# Bandit security scan workflow - generic, robust and easy to understand
+name: Bandit Security Scan
+on:
+  push:
+    paths:
+      - '**/*.py'                           # Trigger on Python file changes
+      - '.github/workflows/**'              # Trigger on workflow/workflow file changes
+  pull_request:
+    paths:
+      - '**/*.py'
+      - '.github/workflows/**'
+  workflow_dispatch: {}                     # Manual trigger
+
+concurrency:
+  group: bandit-scan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bandit-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Cache pip downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies and Bandit
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+          pip install bandit
+
+      - name: Run Bandit and produce JSON report
+        run: |
+          # Run recursively from repo root and save JSON report.
+          # Exit code is allowed (we handle failures explicitly below).
+          bandit -r . -f json -o bandit-report.json || true
+          echo "Bandit report written to bandit-report.json"
+          # Print a short summary for quick logs
+          jq -r '"Issues: \( .results | length ), Metrics: \( .metrics | keys | length )"' bandit-report.json || true
+
+      - name: Fail build on HIGH severity findings (configurable)
+        # This step will exit non-zero if any issue with severity HIGH is found.
+        run: |
+          python - <<'PY'
+          import json,sys
+          try:
+              data = json.load(open('bandit-report.json'))
+          except Exception:
+              print('No bandit-report.json found or invalid JSON.')
+              sys.exit(0)
+          sev_rank = {'LOW':1,'MEDIUM':2,'HIGH':3}
+          high_found = False
+          for item in data.get('results', []):
+              sev = item.get('issue_severity','LOW').upper()
+              if sev_rank.get(sev,0) >= 3:
+                  print('HIGH severity issue:', item.get('issue_text') or item)
+                  high_found = True
+          if high_found:
+              print('Failing workflow because HIGH severity findings were detected.')
+              sys.exit(1)
+          else:
+              print('No HIGH severity findings detected.')
+              sys.exit(0)
+          PY
+
+      - name: Upload Bandit report as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-report
+          path: bandit-report.json

@@ -1,0 +1,74 @@
+# Generic, robust GitHub Actions workflow to build a Python package with Poetry
+
+name: Build — Python (Poetry)
+on:
+  push:
+    paths:
+      - '**/*.py'
+      - 'pyproject.toml'
+      - 'poetry.lock'
+      - '.github/workflows/**'
+  pull_request:
+    paths:
+      - '**/*.py'
+      - 'pyproject.toml'
+      - 'poetry.lock'
+      - '.github/workflows/**'
+  workflow_dispatch: {}  # allow manual runs
+
+concurrency:
+  group: build-poetry-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.12', '3.11', '3.10']  # adjust to the versions you want to test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache Poetry and pip
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pypoetry
+            ~/.cache/pip
+            .venv
+          key: ${{ runner.os }}-poetry-${{ matrix.python-version }}-${{ hashFiles('**/poetry.lock', '**/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-poetry-${{ matrix.python-version }}-
+
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "${HOME}/.local/bin" >> $GITHUB_PATH
+
+      - name: Verify Poetry and Python
+        run: |
+          poetry --version
+          python -V
+
+      - name: Configure Poetry (create virtualenv in-project)
+        run: poetry config virtualenvs.in-project true --local
+
+      - name: Install dependencies with Poetry
+        run: poetry install --no-interaction --no-root
+
+      - name: Build package (sdist + wheel)
+        run: poetry build --no-interaction
+
+      - name: Upload build artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-package-distribution
+          path: dist/*

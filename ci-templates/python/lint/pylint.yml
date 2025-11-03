@@ -1,0 +1,77 @@
+# Generic GitHub Actions workflow: Pylint linting for Python projects (robust, easy to customize)
+name: Pylint — Lint
+
+on:
+  push:
+    paths:
+      - '**/*.py'
+      - '.github/workflows/**'
+  pull_request:
+    paths:
+      - '**/*.py'
+      - '.github/workflows/**'
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'If "true", allow the workflow to apply fixes (default false). Note: Pylint itself does not auto-fix; enable a fixer (e.g. ruff, isort) in the workflow if you want automatic changes.'
+        required: false
+        default: 'false'
+
+jobs:
+  pylint:
+    name: Pylint (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    concurrency:
+      group: pylint-${{ github.ref }}
+      cancel-in-progress: true
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.12', '3.11', '3.10']  # adjust versions as needed
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+
+      - name: Cache pip (fallback)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt', '**/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies and Pylint
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          # Install project dev deps if present, prefer dedicated requirements-dev.txt
+          if [ -f requirements-dev.txt ]; then
+            pip install -r requirements-dev.txt
+          elif [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          elif [ -f pyproject.toml ]; then
+            # Try editable install so local package imports work; adjust for poetry/poetry.lock as needed
+            pip install -e .
+          fi
+          # Ensure pylint is available (version pin here if you want reproducible runs)
+          pip install pylint
+
+      - name: Run Pylint
+        run: |
+          # Respect project config (.pylintrc / pyproject.toml). Adjust flags to suit your project.
+          pylint --jobs=0 .
+
+      - name: Apply fixes (requested)
+        if: ${{ github.event.inputs.apply == 'true' }}
+        run: |
+          echo "Input apply=true. Note: Pylint does not auto-fix code. Install and run a fixer (e.g. ruff --fix, isort, or black) here to apply changes and push them back if desired."

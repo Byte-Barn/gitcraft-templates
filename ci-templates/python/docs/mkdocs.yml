@@ -1,0 +1,89 @@
+# GitHub Actions Workflow: Generic, robust MkDocs build for project documentation (push, PR, manual)
+name: Build Documentation with MkDocs
+
+on:
+  push:
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'docs/mkdocs.yml'
+      - 'requirements*.txt'
+      - '.github/workflows/**'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'docs/mkdocs.yml'
+      - 'requirements*.txt'
+  workflow_dispatch:
+
+# Required permissions for GitHub Pages deployment
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build-docs:
+    name: Build MkDocs site
+    runs-on: ubuntu-latest
+    concurrency:
+      group: build-docs-${{ github.ref }}
+      cancel-in-progress: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+          cache: 'pip'
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('**/requirements*.txt') }}
+          restore-keys: |
+            pip-${{ runner.os }}-
+
+      - name: Install dependencies (MkDocs + project docs requirements)
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip setuptools wheel
+          if [ -f "docs/requirements.txt" ]; then
+            pip install -r docs/requirements.txt
+          elif [ -f "requirements.txt" ]; then
+            pip install -r requirements.txt
+          else
+            pip install mkdocs mkdocs-material
+          fi
+
+      - name: Build documentation with MkDocs
+        id: build
+        run: |
+          set -euo pipefail
+          if [ -f "mkdocs.yml" ]; then
+            CONFIG="mkdocs.yml"
+          elif [ -f "docs/mkdocs.yml" ]; then
+            CONFIG="docs/mkdocs.yml"
+          else
+            echo "No mkdocs.yml found in repo root or docs/ — aborting."
+            exit 1
+          fi
+          mkdocs build -f "$CONFIG" --strict --site-dir site
+
+      - name: Upload site for GitHub Pages
+        uses: actions/upload-pages-artifact@v1
+        with:
+          path: site
+
+  deploy-pages:
+    name: Deploy to GitHub Pages
+    needs: build-docs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy
+        uses: actions/deploy-pages@v1

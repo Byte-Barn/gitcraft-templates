@@ -1,0 +1,61 @@
+# GitHub Actions workflow: Generic, robust pip-audit security scan for Python dependencies
+
+name: Security: pip-audit
+
+on:
+  push:
+    paths:
+      - '**/*.py'
+      - 'requirements.txt'
+      - 'requirements/**/*.txt'
+      - 'pyproject.toml'
+      - 'Pipfile.lock'
+      - '.github/workflows/**'
+  pull_request:
+    paths:
+      - '**/*.py'
+      - 'requirements.txt'
+      - 'requirements/**/*.txt'
+      - 'pyproject.toml'
+      - 'Pipfile.lock'
+      - '.github/workflows/**'
+  workflow_dispatch: {}
+
+jobs:
+  pip-audit-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Cache pip downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt', 'Pipfile.lock', 'pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Upgrade pip and install pip-audit
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pip-audit
+
+      - name: Run pip-audit and save report
+        id: run-pip-audit
+        run: |
+          set -o pipefail
+          mkdir -p reports
+          # Run pip-audit and capture human-readable output. Adjust flags here if you prefer JSON/SARIF output.
+          pip-audit 2>&1 | tee reports/pip-audit.txt
+
+      - name: Upload pip-audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: pip-audit-report
+          path: reports/pip-audit.txt

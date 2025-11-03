@@ -1,0 +1,56 @@
+# Pyright type checker workflow — generic, robust, easy-to-understand CI for Python projects
+
+name: Pyright (Type Checking)
+
+on:
+  push:
+    paths:
+      - '**/*.py'
+      - '.github/workflows/**'
+  pull_request:
+    paths:
+      - '**/*.py'
+      - '.github/workflows/**'
+  workflow_dispatch: {}
+
+concurrency:
+  group: pyright-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    name: Pyright — Type Checking (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
+      fail-fast: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-cache-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('**/requirements.txt', '**/pyproject.toml') }}
+          restore-keys: |
+            pip-cache-${{ runner.os }}-${{ matrix.python-version }}-
+
+      - name: Install Pyright
+        run: |
+          python -m pip install --upgrade pip setuptools
+          pip install pyright
+
+      - name: Run Pyright (type checking)
+        run: |
+          # Pyright will use pyrightconfig.json if present, otherwise checks the repo root
+          pyright . || (echo "Pyright reported type errors" && exit 1)
